@@ -8,6 +8,9 @@ use sp_core::{sr25519, Pair, Public};
 use sp_finality_grandpa::AuthorityId as GrandpaId;
 use sp_runtime::traits::{IdentifyAccount, Verify};
 
+use sp_core::OpaquePeerId;
+use node_template_runtime::NodeAuthorizationConfig;
+
 // The URL for the telemetry server.
 // const STAGING_TELEMETRY_URL: &str = "wss://telemetry.polkadot.io/submit/";
 
@@ -152,5 +155,17 @@ fn testnet_genesis(
 			key: Some(root_key),
 		},
 		transaction_payment: Default::default(),
+		node_authorization: NodeAuthorizationConfig {
+			nodes: vec![
+				(
+					OpaquePeerId(bs58::decode("12D3KooWGrYvgoXo8uQcP6WNSKCybwerurN3ywEsroCq2J2AnUrr").into_vec().unwrap()),
+					endowed_accounts[0].clone()
+				),
+				(
+					OpaquePeerId(bs58::decode("12D3KooWMCZiBDQc8y3H7wawEn5x2WwzEjQyEbTYYxzRYjtJZSC3").into_vec().unwrap()),
+					endowed_accounts[1].clone()
+				),
+			],
+		}
 	}
 }
