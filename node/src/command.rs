@@ -1,14 +1,16 @@
+use std::sync::Arc;
+use clap::Parser;
+use fc_db::frontier_database_dir;
+use frame_benchmarking_cli::{BenchmarkCmd, SUBSTRATE_REFERENCE_HARDWARE};
+use node_template_runtime::Block;
+use sc_cli::{ChainSpec, RuntimeVersion, SubstrateCli};
+use sc_service::{DatabaseSource, PartialComponents};
 use crate::{
 	chain_spec,
 	cli::{Cli, Subcommand},
 	command_helper::{inherent_benchmark_data, BenchmarkExtrinsicBuilder},
-	service,
+	service::{self, db_config_dir},
 };
-use frame_benchmarking_cli::{BenchmarkCmd, SUBSTRATE_REFERENCE_HARDWARE};
-use node_template_runtime::Block;
-use sc_cli::{ChainSpec, RuntimeVersion, SubstrateCli};
-use sc_service::PartialComponents;
-use std::sync::Arc;
 
 impl SubstrateCli for Cli {
 	fn impl_name() -> String {
@@ -32,7 +34,7 @@ impl SubstrateCli for Cli {
 	}
 
 	fn copyright_start_year() -> i32 {
-		2017
+		2022
 	}
 
 	fn load_spec(&self, id: &str) -> Result<Box<dyn sc_service::ChainSpec>, String> {
@@ -51,7 +53,7 @@ impl SubstrateCli for Cli {
 
 /// Parse and run command line arguments
 pub fn run() -> sc_cli::Result<()> {
-	let cli = Cli::from_args();
+	let cli = Cli::parse();
 
 	match &cli.subcommand {
 		Some(Subcommand::Key(cmd)) => cmd.run(&cli),
@@ -91,7 +93,24 @@ pub fn run() -> sc_cli::Result<()> {
 		},
 		Some(Subcommand::PurgeChain(cmd)) => {
 			let runner = cli.create_runner(cmd)?;
-			runner.sync_run(|config| cmd.run(config.database))
+			runner.sync_run(|config| {
+				// Remove Frontier offchain db
+				let db_config_dir = db_config_dir(&config);
+				let frontier_database_config = match config.database {
+					DatabaseSource::RocksDb { .. } => DatabaseSource::RocksDb {
+						path: frontier_database_dir(&db_config_dir, "db"),
+						cache_size: 0,
+					},
+					DatabaseSource::ParityDb { .. } => DatabaseSource::ParityDb {
+						path: frontier_database_dir(&db_config_dir, "paritydb"),
+					},
+					_ => {
+						return Err(format!("Cannot purge `{:?}` database", config.database).into())
+					}
+				};
+				cmd.run(frontier_database_config)?;
+				cmd.run(config.database)
+			})
 		},
 		Some(Subcommand::Revert(cmd)) => {
 			let runner = cli.create_runner(cmd)?;
@@ -146,32 +165,40 @@ pub fn run() -> sc_cli::Result<()> {
 				}
 			})
 		},
-		#[cfg(feature = "try-runtime")]
-		Some(Subcommand::TryRuntime(cmd)) => {
-			let runner = cli.create_runner(cmd)?;
-			runner.async_run(|config| {
-				// we don't need any of the components of new_partial, just a runtime, or a task
-				// manager to do `async_run`.
-				let registry = config.prometheus_config.as_ref().map(|cfg| &cfg.registry);
-				let task_manager =
-					sc_service::TaskManager::new(config.tokio_handle.clone(), registry)
-						.map_err(|e| sc_cli::Error::Service(sc_service::Error::Prometheus(e)))?;
-				Ok((cmd.run::<Block, service::ExecutorDispatch>(config), task_manager))
-			})
-		},
-		#[cfg(not(feature = "try-runtime"))]
-		Some(Subcommand::TryRuntime) => Err("TryRuntime wasn't enabled when building the node. \
-				You can enable it with `--features try-runtime`."
-			.into()),
 		Some(Subcommand::ChainInfo(cmd)) => {
 			let runner = cli.create_runner(cmd)?;
 			runner.sync_run(|config| cmd.run::<Block>(&config))
 		},
+		Some(Subcommand::FrontierDb(cmd)) => {
+			let runner = cli.create_runner(cmd)?;
+			runner.sync_run(|config| {
+				let PartialComponents { client, other, .. } = service::new_partial(&config, &cli)?;
+				let frontier_backend = other.2;
+				cmd.run::<_, node_template_runtime::opaque::Block>(client, frontier_backend)
+			})
+		}
 		None => {
 			let runner = cli.create_runner(&cli.run)?;
 			runner.run_node_until_exit(|config| async move {
 				service::new_full(config).map_err(sc_cli::Error::Service)
 			})
 		},
+		// #[cfg(feature = "try-runtime")]
+		// Some(Subcommand::TryRuntime(cmd)) => {
+		// 	let runner = cli.create_runner(cmd)?;
+		// 	runner.async_run(|config| {
+		// 		// we don't need any of the components of new_partial, just a runtime, or a task
+		// 		// manager to do `async_run`.
+		// 		let registry = config.prometheus_config.as_ref().map(|cfg| &cfg.registry);
+		// 		let task_manager =
+		// 			sc_service::TaskManager::new(config.tokio_handle.clone(), registry)
+		// 				.map_err(|e| sc_cli::Error::Service(sc_service::Error::Prometheus(e)))?;
+		// 		Ok((cmd.run::<Block, service::ExecutorDispatch>(config), task_manager))
+		// 	})
+		// },
+		// #[cfg(not(feature = "try-runtime"))]
+		// Some(Subcommand::TryRuntime) => Err("TryRuntime wasn't enabled when building the node. \
+		// 		You can enable it with `--features try-runtime`."
+		// 	.into()),
 	}
 }

@@ -1,15 +1,16 @@
 use node_template_runtime::{
-	AccountId, AuraConfig, BalancesConfig, GenesisConfig, GrandpaConfig, Signature, SudoConfig,
-	SystemConfig, WASM_BINARY,
+	AccountId, AuraConfig, BalancesConfig, EVMConfig, EthereumConfig, GenesisConfig, GrandpaConfig, 
+	Signature, SudoConfig, SystemConfig, WASM_BINARY,
 };
 use sc_service::ChainType;
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
-use sp_core::{sr25519, Pair, Public};
+use sp_core::{sr25519, Pair, Public, H160, U256};
 use sp_finality_grandpa::AuthorityId as GrandpaId;
 use sp_runtime::traits::{IdentifyAccount, Verify};
+use std::{collections::BTreeMap, str::FromStr};
 
-use sp_core::OpaquePeerId;
-use node_template_runtime::NodeAuthorizationConfig;
+// use sp_core::OpaquePeerId;
+// use node_template_runtime::NodeAuthorizationConfig;
 
 // The URL for the telemetry server.
 // const STAGING_TELEMETRY_URL: &str = "wss://telemetry.polkadot.io/submit/";
@@ -154,18 +155,55 @@ fn testnet_genesis(
 			// Assign network admin rights.
 			key: Some(root_key),
 		},
-		transaction_payment: Default::default(),
-		node_authorization: NodeAuthorizationConfig {
-			nodes: vec![
-				(
-					OpaquePeerId(bs58::decode("12D3KooWGrYvgoXo8uQcP6WNSKCybwerurN3ywEsroCq2J2AnUrr").into_vec().unwrap()),
-					endowed_accounts[0].clone()
-				),
-				(
-					OpaquePeerId(bs58::decode("12D3KooWMCZiBDQc8y3H7wawEn5x2WwzEjQyEbTYYxzRYjtJZSC3").into_vec().unwrap()),
-					endowed_accounts[1].clone()
-				),
-			],
-		}
+		evm: EVMConfig {
+			accounts: {
+				let mut map = BTreeMap::new();
+				map.insert(
+					// H160 address of Alice dev account
+					// Derived from SS58 (42 prefix) address
+					// SS58: 5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY
+					// hex: 0xd43593c715fdd31c61141abd04a99fd6822c8558854ccde39a5684e7a56da27d
+					// Using the full hex key, truncating to the first 20 bytes (the first 40 hex chars)
+					H160::from_str("d43593c715fdd31c61141abd04a99fd6822c8558")
+						.expect("internal H160 is valid; qed"),
+					fp_evm::GenesisAccount {
+						balance: U256::from_str("0xffffffffffffffffffffffffffffffff")
+							.expect("internal U256 is valid; qed"),
+						code: Default::default(),
+						nonce: Default::default(),
+						storage: Default::default(),
+					},
+				);
+				map.insert(
+					// H160 address of CI test runner account
+					H160::from_str("6be02d1d3665660d22ff9624b7be0551ee1ac91b")
+						.expect("internal H160 is valid; qed"),
+					fp_evm::GenesisAccount {
+						balance: U256::from_str("0xffffffffffffffffffffffffffffffff")
+							.expect("internal U256 is valid; qed"),
+						code: Default::default(),
+						nonce: Default::default(),
+						storage: Default::default(),
+					},
+				);
+				map
+			},
+		},
+		ethereum: EthereumConfig {},
+		dynamic_fee: Default::default(),
+		base_fee: Default::default(),
+		// transaction_payment: Default::default(),
+		// node_authorization: NodeAuthorizationConfig {
+		// 	nodes: vec![
+		// 		(
+		// 			OpaquePeerId(bs58::decode("12D3KooWGrYvgoXo8uQcP6WNSKCybwerurN3ywEsroCq2J2AnUrr").into_vec().unwrap()),
+		// 			endowed_accounts[0].clone()
+		// 		),
+		// 		(
+		// 			OpaquePeerId(bs58::decode("12D3KooWMCZiBDQc8y3H7wawEn5x2WwzEjQyEbTYYxzRYjtJZSC3").into_vec().unwrap()),
+		// 			endowed_accounts[1].clone()
+		// 		),
+		// 	],
+		// }
 	}
 }
